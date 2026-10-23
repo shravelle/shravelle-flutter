@@ -1,0 +1,11 @@
+name: shravelle_flutter
+description: Shravelle mobile monitoring for Flutter (crashes, errors, network, screens, sessions)
+version: 1.0.0
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.10.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  path_provider: ^2.1.0
