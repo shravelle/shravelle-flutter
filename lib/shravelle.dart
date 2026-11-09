@@ -18,16 +18,27 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+
+part 'src/replay.dart';
 
 class ShravelleConfig {
   final String endpoint, key, app, release;
   final Duration flushInterval;
   final List<String> tracePropagationHosts;
+  /// Mobile session replay (wireframes of the screens and taps, text masked).
+  final bool sessionReplay;
+  /// Share of sessions recorded (0..1).
+  final double replaySampleRate;
+  /// Mask all text in replays (text in text fields is always masked).
+  final bool replayMaskText;
   const ShravelleConfig({required this.endpoint, required this.key, required this.app, this.release = '',
-      this.flushInterval = const Duration(seconds: 15), this.tracePropagationHosts = const []});
+      this.flushInterval = const Duration(seconds: 15), this.tracePropagationHosts = const [],
+      this.sessionReplay = false, this.replaySampleRate = 1, this.replayMaskText = true});
 }
 
 class Shravelle {
@@ -54,18 +65,27 @@ class Shravelle {
     final dir = await getApplicationSupportDirectory();
     _file = File('${dir.path}/shravelle-queue.jsonl');
     final prevFlutter = FlutterError.onError;
-    FlutterError.onError = (d) { _push({'type': 'handled_exception', 'name': d.exception.runtimeType.toString(), 'message': d.exceptionAsString(), 'stack': d.stack.toString()}); prevFlutter?.call(d); };
+    FlutterError.onError = (d) { ShravelleReplay.markError(); _push({'type': 'handled_exception', 'name': d.exception.runtimeType.toString(), 'message': d.exceptionAsString(), 'stack': d.stack.toString()}); prevFlutter?.call(d); };
     PlatformDispatcher.instance.onError = (e, st) { _crash(e, st); return false; };
     _push({'type': 'app_start', 'name': 'cold_start', 'value': DateTime.now().difference(_start).inMilliseconds.toDouble()});
     Timer.periodic(cfg.flushInterval, (_) => flush());
+    if (cfg.sessionReplay) ShravelleReplay._startRecording(cfg);
   }
 
   static void setUser(String id) => _user = id;
-  static void screen(String name) => _push({'type': 'page_view', 'name': 'screen', 'route': name, 'page_url': 'app://$name'});
+  static void screen(String name) {
+    ShravelleReplay.screen = name;
+    _push({'type': 'page_view', 'name': 'screen', 'route': name, 'page_url': 'app://$name'});
+  }
   static void track(String name, {Map<String, String> attributes = const {}, double value = 0}) => _push({'type': 'custom', 'name': name, 'value': value, 'attributes': attributes});
-  static void recordError(Object e, [StackTrace? st]) => _push({'type': 'handled_exception', 'name': e.runtimeType.toString(), 'message': e.toString(), 'stack': (st ?? StackTrace.current).toString()});
+  static void recordError(Object e, [StackTrace? st]) {
+    ShravelleReplay.markError();
+    _push({'type': 'handled_exception', 'name': e.runtimeType.toString(), 'message': e.toString(), 'stack': (st ?? StackTrace.current).toString()});
+  }
 
   static void _crash(Object e, StackTrace st) {
+    ShravelleReplay.markError();
+    ShravelleReplay.flush();
     _push({'type': 'crash', 'name': e.runtimeType.toString(), 'message': e.toString(), 'stack': st.toString()});
     flush();
   }
