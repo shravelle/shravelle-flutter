@@ -1,5 +1,5 @@
-.DS_Store
 .dart_tool/
-build/
-.packages
+.flutter-plugins
+.flutter-plugins-dependencies
 pubspec.lock
+build/
